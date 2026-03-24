@@ -1,0 +1,135 @@
+/**
+ * Minimal fetch-based HTTP client with interceptors and auth support.
+ */
+
+/** Metadata for offline-queueable write actions. */
+export interface ActionMeta {
+  moduleId: string;
+  description: string;
+  entityType?: string;
+  entityId?: string;
+}
+
+export interface ApiClientOptions {
+  baseUrl: string;
+  getToken?: () => string | null;
+  getTenant?: () => string | null;
+  onUnauthorized?: () => void;
+  /**
+   * Called when a write action is made while offline and `meta` is provided.
+   * Should persist the action for later sync. Returns the queue entry ID.
+   */
+  onQueueAction?: (
+    method: 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    body: unknown,
+    meta: ActionMeta,
+  ) => Promise<string>;
+}
+
+export interface ApiResponse<T = unknown> {
+  ok: boolean;
+  status: number;
+  data: T;
+  headers: Headers;
+  /** True when the action was queued offline instead of sent. */
+  queued?: boolean;
+  /** ID of the queued action (set when `queued` is true). */
+  queueId?: string;
+  /** True when the response was served from the service worker cache. */
+  fromCache?: boolean;
+  /** Timestamp (ms) when the cached response was stored. */
+  cachedAt?: number;
+}
+
+export class ApiClient {
+  private _options: ApiClientOptions;
+
+  constructor(options: ApiClientOptions) {
+    this._options = options;
+  }
+
+  get baseUrl(): string {
+    return this._options.baseUrl;
+  }
+
+  async get<T = unknown>(path: string, params?: Record<string, string>): Promise<ApiResponse<T>> {
+    let url = path;
+    if (params) {
+      const qs = new URLSearchParams(params).toString();
+      if (qs) url += '?' + qs;
+    }
+    return this._fetch<T>(url, { method: 'GET' });
+  }
+
+  async post<T = unknown>(path: string, body?: unknown, meta?: ActionMeta): Promise<ApiResponse<T>> {
+    if (!navigator.onLine && meta) return this._queue<T>('POST', path, body, meta);
+    return this._fetch<T>(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  async put<T = unknown>(path: string, body?: unknown, meta?: ActionMeta): Promise<ApiResponse<T>> {
+    if (!navigator.onLine && meta) return this._queue<T>('PUT', path, body, meta);
+    return this._fetch<T>(path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  async delete<T = unknown>(path: string, meta?: ActionMeta): Promise<ApiResponse<T>> {
+    if (!navigator.onLine && meta) return this._queue<T>('DELETE', path, undefined, meta);
+    return this._fetch<T>(path, { method: 'DELETE' });
+  }
+
+  private async _queue<T>(
+    method: 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    body: unknown,
+    meta: ActionMeta,
+  ): Promise<ApiResponse<T>> {
+    const queueId = await this._options.onQueueAction?.(method, path, body, meta);
+    return { ok: true, status: 0, data: null as T, headers: new Headers(), queued: true, queueId };
+  }
+
+  private async _fetch<T>(path: string, init: RequestInit): Promise<ApiResponse<T>> {
+    const url = this._options.baseUrl.replace(/\/$/, '') + '/' + path.replace(/^\//, '');
+
+    const headers = new Headers(init.headers);
+
+    const token = this._options.getToken?.();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    const tenant = this._options.getTenant?.();
+    if (tenant) {
+      headers.set('X-Tenant-Id', tenant);
+    }
+
+    const response = await fetch(url, { ...init, headers });
+
+    if (response.status === 401) {
+      this._options.onUnauthorized?.();
+    }
+
+    let data: T;
+    const contentType = response.headers.get('Content-Type') ?? '';
+    if (contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      data = text as unknown as T;
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+      headers: response.headers,
+    };
+  }
+}
