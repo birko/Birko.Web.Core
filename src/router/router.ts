@@ -28,7 +28,6 @@ export class Router {
       : outlet;
 
     window.addEventListener('hashchange', () => this._resolve());
-    window.addEventListener('load', () => this._resolve());
   }
 
   /** Programmatic navigation. */
@@ -82,13 +81,25 @@ export class Router {
 
     if (this._outlet) {
       const el = await match.route.component();
-      this._outlet.innerHTML = '';
-      this._outlet.appendChild(el);
+      // Skip DOM replacement if the component is already mounted in the outlet
+      // (e.g. a persistent shell that only swaps its children internally)
+      if (el.parentNode !== this._outlet) {
+        this._outlet.innerHTML = '';
+        this._outlet.appendChild(el);
+      }
     }
   }
 
   private _match(path: string, routes: Route[]): RouteMatch | null {
+    let wildcard: Route | null = null;
+
     for (const route of routes) {
+      // Wildcard catch-all — remember but keep looking for exact match
+      if (route.path === '*') {
+        wildcard = route;
+        continue;
+      }
+
       const params: Record<string, string> = {};
       const routeParts = route.path.split('/').filter(Boolean);
       const pathParts = path.split('/').filter(Boolean);
@@ -115,6 +126,11 @@ export class Router {
       if (matched) {
         return { route, params, path };
       }
+    }
+
+    // No exact match — fall back to wildcard if present
+    if (wildcard) {
+      return { route: wildcard, params: {}, path };
     }
 
     return null;

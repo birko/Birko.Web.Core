@@ -19,7 +19,7 @@ export abstract class BaseComponent extends HTMLElement {
   static onGlobalChange(subscribe: (cb: () => void) => () => void): void {
     const unsub = subscribe(() => {
       for (const instance of BaseComponent._liveInstances) {
-        instance.update();
+        try { instance.update(); } catch { /* don't let one broken component stop the rest */ }
       }
     });
     BaseComponent._broadcastUnsubs.push(unsub);

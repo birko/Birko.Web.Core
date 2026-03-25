@@ -53,7 +53,7 @@ export class I18n {
       )
     );
 
-    this._locale.value = locale;
+    this._locale.update(() => locale);
 
     if (this._storageKey) {
       localStorage.setItem(this._storageKey, locale);
