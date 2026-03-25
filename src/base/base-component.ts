@@ -6,6 +6,25 @@
 export abstract class BaseComponent extends HTMLElement {
   private _initialized = false;
 
+  // ── Global broadcast — re-render all live components ──
+
+  private static _liveInstances = new Set<BaseComponent>();
+  private static _broadcastUnsubs: (() => void)[] = [];
+
+  /**
+   * Register a global trigger that re-renders all mounted components.
+   * Typical use: `BaseComponent.onGlobalChange(i18n.onLocaleChange.bind(i18n))`
+   * @param subscribe A function that accepts a callback and returns an unsubscribe fn.
+   */
+  static onGlobalChange(subscribe: (cb: () => void) => () => void): void {
+    const unsub = subscribe(() => {
+      for (const instance of BaseComponent._liveInstances) {
+        instance.update();
+      }
+    });
+    BaseComponent._broadcastUnsubs.push(unsub);
+  }
+
   /** Override to declare observed attributes for reactive updates. */
   static get observedAttributes(): string[] {
     return [];
@@ -30,6 +49,7 @@ export abstract class BaseComponent extends HTMLElement {
   }
 
   connectedCallback(): void {
+    BaseComponent._liveInstances.add(this);
     this._applyStyles();
     this.update();
     this._initialized = true;
@@ -37,6 +57,7 @@ export abstract class BaseComponent extends HTMLElement {
   }
 
   disconnectedCallback(): void {
+    BaseComponent._liveInstances.delete(this);
     this.onUnmount();
   }
 
