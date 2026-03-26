@@ -110,19 +110,31 @@ export class ApiClient {
       headers.set('X-Tenant-Id', tenant);
     }
 
-    const response = await fetch(url, { ...init, headers });
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, headers });
+    } catch (err) {
+      // Network error (server unreachable, DNS failure, CORS, etc.)
+      console.error(`[ApiClient] Network error: ${init.method ?? 'GET'} ${path}`, err);
+      return { ok: false, status: 0, data: null as T, headers: new Headers() };
+    }
 
     if (response.status === 401) {
       this._options.onUnauthorized?.();
     }
 
     let data: T;
-    const contentType = response.headers.get('Content-Type') ?? '';
-    if (contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      data = text as unknown as T;
+    try {
+      const contentType = response.headers.get('Content-Type') ?? '';
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        data = text as unknown as T;
+      }
+    } catch {
+      // Malformed response body
+      data = null as T;
     }
 
     return {
