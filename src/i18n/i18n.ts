@@ -11,6 +11,8 @@ export interface I18nOptions {
   fallbackLocale?: string;
   /** LocalStorage key to persist the chosen locale. Empty string disables persistence. */
   storageKey?: string;
+  /** Build version string appended to locale fetch URLs for cache-busting. */
+  version?: string;
 }
 
 // ── I18n ───────────────────────────────────────────────────────────────────
@@ -22,11 +24,13 @@ export class I18n {
   private _storageKey: string;
   private _loadedModules = new Set<string>();
   private _basePath = '/locales';
+  private _version: string;
 
   constructor(options: I18nOptions = {}) {
-    const { defaultLocale = 'en', fallbackLocale = 'en', storageKey = '' } = options;
+    const { defaultLocale = 'en', fallbackLocale = 'en', storageKey = '', version = '' } = options;
     this._fallbackLocale = fallbackLocale;
     this._storageKey = storageKey;
+    this._version = version;
     this._locale = signal(defaultLocale);
   }
 
@@ -155,7 +159,8 @@ export class I18n {
 
   private async _loadBundle(locale: string, url: string): Promise<void> {
     try {
-      const resp = await fetch(url);
+      const fetchUrl = this._version ? `${url}?v=${this._version}` : url;
+      const resp = await fetch(fetchUrl);
       if (!resp.ok) return;
       const data = await resp.json();
       const existing = this._messages.get(locale) ?? {};
