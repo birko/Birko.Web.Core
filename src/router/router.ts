@@ -56,7 +56,9 @@ export class Router {
   }
 
   private async _resolve(): Promise<void> {
-    const hash = window.location.hash.slice(1) || '/';
+    const raw = window.location.hash.slice(1) || '/';
+    const qIdx = raw.indexOf('?');
+    const hash = qIdx === -1 ? raw : raw.slice(0, qIdx);
     const match = this._match(hash, this._routes);
 
     if (!match) {
