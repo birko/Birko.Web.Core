@@ -8,8 +8,5 @@
     "./router": "./src/router/index.ts",
     "./state": "./src/state/index.ts",
     "./http": "./src/http/index.ts"
-  },
-  "devDependencies": {
-    "typescript": "^5.7.0"
   }
 }
