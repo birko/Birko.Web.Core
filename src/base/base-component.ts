@@ -5,6 +5,7 @@
  */
 export abstract class BaseComponent extends HTMLElement {
   private _initialized = false;
+  private _listenerAC: AbortController | null = null;
 
   // ── Global broadcast — re-render all live components ──
 
@@ -68,6 +69,8 @@ export abstract class BaseComponent extends HTMLElement {
 
   disconnectedCallback(): void {
     BaseComponent._liveInstances.delete(this);
+    this._listenerAC?.abort();
+    this._listenerAC = null;
     this.onUnmount();
   }
 
@@ -83,10 +86,25 @@ export abstract class BaseComponent extends HTMLElement {
   /** Called on disconnect. Override for cleanup. */
   protected onUnmount(): void {}
 
-  /** Re-render the component (full innerHTML replacement). */
+  /**
+   * Re-render the component.
+   * First render uses innerHTML (fast, no existing DOM to preserve).
+   * Subsequent renders use DOM morphing to preserve child custom elements,
+   * their internal state (expanded nodes, form values, event listeners), and
+   * shadow DOM subtrees.
+   */
   protected update(): void {
     if (!this.shadowRoot) return;
-    this.shadowRoot.innerHTML = this.render();
+    if (!this._initialized) {
+      this.shadowRoot.innerHTML = this.render();
+    } else {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = this.render();
+      BaseComponent._morphChildren(this.shadowRoot, tpl.content);
+    }
+    // Abort previous listeners registered via listen(), then create fresh signal
+    this._listenerAC?.abort();
+    this._listenerAC = new AbortController();
     this.onUpdated();
   }
 
@@ -100,6 +118,8 @@ export abstract class BaseComponent extends HTMLElement {
     const tpl = document.createElement('template');
     tpl.innerHTML = this.render();
     BaseComponent._morphChildren(this.shadowRoot, tpl.content);
+    this._listenerAC?.abort();
+    this._listenerAC = new AbortController();
     this.onUpdated();
   }
 
@@ -114,6 +134,15 @@ export abstract class BaseComponent extends HTMLElement {
   /** Query all elements inside the shadow DOM. */
   protected $$<T extends HTMLElement>(selector: string): T[] {
     return Array.from(this.shadowRoot?.querySelectorAll<T>(selector) ?? []);
+  }
+
+  /**
+   * Add an event listener that is automatically removed on the next update() cycle.
+   * Use this in onUpdated() instead of raw addEventListener to prevent duplicate
+   * listeners when DOM morphing preserves elements across re-renders.
+   */
+  protected listen(target: EventTarget, event: string, handler: EventListenerOrEventListenerObject, options?: AddEventListenerOptions): void {
+    target.addEventListener(event, handler, { ...options, signal: this._listenerAC?.signal });
   }
 
   /** Dispatch a typed custom event that bubbles through Shadow DOM. */
@@ -205,7 +234,12 @@ export abstract class BaseComponent extends HTMLElement {
     for (const a of Array.from(freshEl.attributes)) {
       if (oldEl.getAttribute(a.name) !== a.value) oldEl.setAttribute(a.name, a.value);
     }
-    // Recurse into light DOM children
+    // Self-rendering custom elements (shadow DOM, no light DOM children from parent)
+    // manage their own rendering — only sync attributes, don't recurse.
+    // Container components (b-card, b-modal, etc.) have light DOM children via slots
+    // and MUST be recursed into so the parent can update slotted content.
+    if (oldEl.shadowRoot && !freshEl.childNodes.length) return;
+    // Recurse into light DOM children (plain elements + container components)
     BaseComponent._morphChildren(oldEl, freshEl);
   }
 }
