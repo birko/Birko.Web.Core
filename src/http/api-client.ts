@@ -137,6 +137,21 @@ export class ApiClient {
       data = null as T;
     }
 
+    if (!response.ok) {
+      const method = init.method ?? 'GET';
+      const detail = data && typeof data === 'object' && 'Detail' in (data as any)
+        ? (data as any).Detail
+        : undefined;
+      const error = data && typeof data === 'object' && 'Error' in (data as any)
+        ? (data as any).Error
+        : undefined;
+      console.error(
+        `[API ${response.status}] ${method} ${path}` +
+        (error ? `\n  Error: ${error}` : '') +
+        (detail ? `\n  Detail: ${detail}` : ''),
+      );
+    }
+
     return {
       ok: response.ok,
       status: response.status,
