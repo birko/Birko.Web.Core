@@ -73,8 +73,27 @@ protected update(): void        // re-render + call onUpdated()
 ### Querying
 
 ```typescript
-protected $<T>(selector: string): T | null    // querySelector inside shadow root
-protected $$<T>(selector: string): T[]        // querySelectorAll inside shadow root
+protected $<T>(selector: string): T | null                     // querySelector inside shadow root
+protected $$<T>(selector: string): T[]                         // querySelectorAll inside shadow root
+protected child<T extends BaseComponent>(selector: string): T | null  // typed child component access
+```
+
+`child<T>()` provides typed access to child web components — use it instead of `this.$() as any`:
+
+```typescript
+// ❌ untyped — no autocomplete, error-prone
+const table = this.$('#table') as any;
+table?.setColumns([...]);
+
+// ✅ typed — autocomplete, compile-time safety
+const table = this.child<BTable>('#table');
+table?.setColumns([...]);
+
+const form = this.child<BForm>('#form');
+const { valid, data } = form?.validate() ?? { valid: false, data: {} };
+
+const modal = this.child<BModal>('#modal');
+modal?.open();
 ```
 
 ### Events

@@ -136,6 +136,11 @@ export abstract class BaseComponent extends HTMLElement {
     return Array.from(this.shadowRoot?.querySelectorAll<T>(selector) ?? []);
   }
 
+  /** Query a child component inside the shadow DOM with typed access to its API. */
+  protected child<T extends BaseComponent>(selector: string): T | null {
+    return this.shadowRoot?.querySelector<HTMLElement>(selector) as T | null;
+  }
+
   /**
    * Add an event listener that is automatically removed on the next update() cycle.
    * Use this in onUpdated() instead of raw addEventListener to prevent duplicate
