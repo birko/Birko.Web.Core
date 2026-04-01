@@ -16,6 +16,12 @@ export interface ApiClientOptions {
   getTenant?: () => string | null;
   onUnauthorized?: () => void;
   /**
+   * Called on 401 before onUnauthorized. Should attempt to refresh the token
+   * and return the new access token, or null if refresh failed.
+   * When this returns a new token, the original request is retried automatically.
+   */
+  onRefreshToken?: () => Promise<string | null>;
+  /**
    * Called when a write action is made while offline and `meta` is provided.
    * Should persist the action for later sync. Returns the queue entry ID.
    */
@@ -44,6 +50,7 @@ export interface ApiResponse<T = unknown> {
 
 export class ApiClient {
   private _options: ApiClientOptions;
+  private _refreshPromise: Promise<string | null> | null = null;
 
   constructor(options: ApiClientOptions) {
     this._options = options;
@@ -119,7 +126,28 @@ export class ApiClient {
       return { ok: false, status: 0, data: null as T, headers: new Headers() };
     }
 
-    if (response.status === 401) {
+    if (response.status === 401 && this._options.onRefreshToken) {
+      // Deduplicate concurrent refresh attempts
+      if (!this._refreshPromise) {
+        this._refreshPromise = this._options.onRefreshToken().finally(() => {
+          this._refreshPromise = null;
+        });
+      }
+      const newToken = await this._refreshPromise;
+      if (newToken) {
+        // Retry original request with new token
+        headers.set('Authorization', `Bearer ${newToken}`);
+        try {
+          response = await fetch(url, { ...init, headers });
+        } catch {
+          return { ok: false, status: 0, data: null as T, headers: new Headers() };
+        }
+      }
+      // If still 401 after refresh (or refresh returned null), log out
+      if (response.status === 401) {
+        this._options.onUnauthorized?.();
+      }
+    } else if (response.status === 401) {
       this._options.onUnauthorized?.();
     }
 
