@@ -5,12 +5,21 @@
 export type Subscriber<T> = (value: T) => void;
 export type Unsubscribe = () => void;
 
+export interface SignalOptions {
+  /** localStorage key — when set, value is auto-saved/restored. */
+  persist?: string;
+}
+
+const PERSIST_PREFIX = 'symbio_';
+
 export class Signal<T> {
   private _value: T;
   private _subscribers = new Set<Subscriber<T>>();
+  private _persistKey: string | undefined;
 
-  constructor(initialValue: T) {
-    this._value = initialValue;
+  constructor(initialValue: T, options?: SignalOptions) {
+    this._persistKey = options?.persist ? PERSIST_PREFIX + options.persist : undefined;
+    this._value = this._persistKey ? _restore(this._persistKey, initialValue) : initialValue;
   }
 
   /** Get the current value. */
@@ -22,6 +31,7 @@ export class Signal<T> {
   set value(newValue: T) {
     if (this._value !== newValue) {
       this._value = newValue;
+      this._persist();
       this._notify();
     }
   }
@@ -29,6 +39,7 @@ export class Signal<T> {
   /** Update value using a function (useful for objects/arrays). Always notifies. */
   update(fn: (current: T) => T): void {
     this._value = fn(this._value);
+    this._persist();
     this._notify();
   }
 
@@ -50,11 +61,30 @@ export class Signal<T> {
       fn(this._value);
     }
   }
+
+  private _persist(): void {
+    if (this._persistKey) _save(this._persistKey, this._value);
+  }
 }
 
 /** Create a signal with an initial value. */
-export function signal<T>(value: T): Signal<T> {
-  return new Signal(value);
+export function signal<T>(value: T, options?: SignalOptions): Signal<T> {
+  return new Signal(value, options);
+}
+
+function _save(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch { /* quota exceeded or SSR — ignore */ }
+}
+
+function _restore<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw !== null ? JSON.parse(raw) as T : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 /**

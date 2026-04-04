@@ -1,4 +1,9 @@
-import { Signal, signal, type Subscriber, type Unsubscribe } from './signal.js';
+import { Signal, signal, type SignalOptions, type Subscriber, type Unsubscribe } from './signal.js';
+
+export interface StoreOptions {
+  /** localStorage key — when set, all keys are auto-saved/restored as one object. */
+  persist?: string;
+}
 
 /**
  * Simple key-value store backed by signals.
@@ -8,10 +13,14 @@ export class Store<T extends object> {
   private _signals = new Map<string, Signal<unknown>>();
   private _initial: T;
 
-  constructor(initial: T) {
+  constructor(initial: T, options?: StoreOptions) {
     this._initial = { ...initial };
+    const persistPrefix = options?.persist;
     for (const [key, value] of Object.entries(initial)) {
-      this._signals.set(key, signal(value));
+      const opts: SignalOptions | undefined = persistPrefix
+        ? { persist: `${persistPrefix}.${key}` }
+        : undefined;
+      this._signals.set(key, signal(value, opts));
     }
   }
 
