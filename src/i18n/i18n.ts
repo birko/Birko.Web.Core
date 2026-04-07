@@ -78,7 +78,7 @@ export class I18n {
 
     // Try plural resolution first (when params has 'count')
     let value: string | null = null;
-    if (params && 'count' in params) {
+    if (params && typeof params === 'object' && 'count' in params) {
       value = this._resolvePlural(key, locale, Number(params.count))
            ?? this._resolvePlural(key, this._fallbackLocale, Number(params.count));
     }
