@@ -59,12 +59,18 @@ export abstract class BaseComponent extends HTMLElement {
     this.attachShadow({ mode: 'open' });
   }
 
-  connectedCallback(): void {
+  async connectedCallback(): Promise<void> {
     BaseComponent._liveInstances.add(this);
     this._applyStyles();
-    this.update();
+    // Initial render — populate shadow DOM but skip onUpdated() until after onMount
+    if (this.shadowRoot) {
+      this.shadowRoot.innerHTML = this.render();
+    }
     this._initialized = true;
-    this.onMount();
+    this._listenerAC = new AbortController();
+    await this.onMount();
+    // Now that onMount has completed (async data loaded), run the first onUpdated
+    this.onUpdated();
   }
 
   disconnectedCallback(): void {
