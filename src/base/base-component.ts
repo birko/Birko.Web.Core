@@ -63,12 +63,26 @@ export abstract class BaseComponent extends HTMLElement {
     BaseComponent._liveInstances.add(this);
     this._applyStyles();
     // Initial render — populate shadow DOM but skip onUpdated() until after onMount
-    if (this.shadowRoot) {
-      this.shadowRoot.innerHTML = this.render();
+    try {
+      if (this.shadowRoot) {
+        this.shadowRoot.innerHTML = this.render();
+      }
+    } catch (err) {
+      console.error(`${this.constructor.name}: render() threw`, err);
+      if (this.shadowRoot) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.shadowRoot.innerHTML = `<div style="padding:.75rem;color:#b91c1c;font:0.75rem/1.4 monospace"><b>${this.constructor.name}</b>: ${msg}</div>`;
+      }
+      BaseComponent._liveInstances.delete(this);
+      return;
     }
     this._initialized = true;
     this._listenerAC = new AbortController();
-    await this.onMount();
+    try {
+      await this.onMount();
+    } catch (err) {
+      console.error(`${this.constructor.name}: onMount() threw`, err);
+    }
     // Now that onMount has completed (async data loaded), run the first onUpdated
     this.onUpdated();
   }
@@ -101,12 +115,17 @@ export abstract class BaseComponent extends HTMLElement {
    */
   protected update(): void {
     if (!this.shadowRoot) return;
-    if (!this._initialized) {
-      this.shadowRoot.innerHTML = this.render();
-    } else {
-      const tpl = document.createElement('template');
-      tpl.innerHTML = this.render();
-      BaseComponent._morphChildren(this.shadowRoot, tpl.content);
+    try {
+      if (!this._initialized) {
+        this.shadowRoot.innerHTML = this.render();
+      } else {
+        const tpl = document.createElement('template');
+        tpl.innerHTML = this.render();
+        BaseComponent._morphChildren(this.shadowRoot, tpl.content);
+      }
+    } catch (err) {
+      console.error(`${this.constructor.name}: render() threw during update`, err);
+      return;
     }
     // Abort previous listeners registered via listen(), then create fresh signal
     this._listenerAC?.abort();
@@ -121,9 +140,14 @@ export abstract class BaseComponent extends HTMLElement {
    */
   protected softUpdate(): void {
     if (!this.shadowRoot) return;
-    const tpl = document.createElement('template');
-    tpl.innerHTML = this.render();
-    BaseComponent._morphChildren(this.shadowRoot, tpl.content);
+    try {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = this.render();
+      BaseComponent._morphChildren(this.shadowRoot, tpl.content);
+    } catch (err) {
+      console.error(`${this.constructor.name}: render() threw during softUpdate`, err);
+      return;
+    }
     this._listenerAC?.abort();
     this._listenerAC = new AbortController();
     this.onUpdated();

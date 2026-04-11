@@ -6,8 +6,8 @@ Lightweight Web Component framework. No dependencies, no virtual DOM, no build-t
 
 ```
 birko-web-core           # main
-birko-web-core/state     # Signal, Store
-birko-web-core/http      # ApiClient, SseClient
+birko-web-core/state     # Signal, Store, persistSet/persistGet/persistRemove
+birko-web-core/http      # ApiClient, SseClient, unwrapList, apiErrorMessage, PagedResult
 birko-web-core/router    # Router, link
 ```
 
@@ -147,6 +147,25 @@ count.update(n => n + 1);
 const double = computed(() => count.value * 2, [count]);
 ```
 
+### localStorage helpers
+
+```typescript
+import { persistSet, persistGet, persistRemove } from 'birko-web-core/state';
+
+// Store any JSON-serializable value:
+persistSet('app.theme', 'dark');
+persistSet('app.filters', { status: 'active', page: 1 });
+
+// Retrieve (typed), returns null if missing or parse fails:
+const theme = persistGet<string>('app.theme');
+const filters = persistGet<{ status: string; page: number }>('app.filters');
+
+// Remove:
+persistRemove('app.theme');
+```
+
+Use these instead of `localStorage.getItem/setItem` directly — they handle `JSON.stringify/parse` and swallow parse errors gracefully.
+
 ### Store\<T\>
 
 Key-value store where every key is a Signal.
@@ -203,6 +222,47 @@ const created = await api.post<User>('users', { name: 'Alice' }, {
 | `headers` | `Headers` | Response headers |
 | `queued` | `boolean?` | Action was queued (offline) |
 | `fromCache` | `boolean?` | Service worker cache hit |
+
+### HTTP utilities
+
+```typescript
+import { unwrapList, apiErrorMessage, type PagedResult } from 'birko-web-core/http';
+```
+
+**PagedResult\<T\>** — the standard server envelope returned by paginated endpoints:
+
+```typescript
+interface PagedResult<T> {
+  items: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+```
+
+**unwrapList\<T\>** — extract an item array from any API response shape without boilerplate:
+
+```typescript
+// Handles: { items: T[] }, { data: T[] }, { [dataKey]: T[] }, or raw T[]
+const items = unwrapList<Device>(response);
+
+// Custom key (e.g. response.devices):
+const items = unwrapList<Device>(response, 'devices');
+```
+
+Returns `[]` when the response is not ok or has no matching data.
+
+**apiErrorMessage** — extract a human-readable error from ASP.NET ProblemDetails or ModelState responses:
+
+```typescript
+// Returns the first validation message, detail, or title it finds:
+const msg = apiErrorMessage(resp.data);
+
+// With custom fallback:
+const msg = apiErrorMessage(resp.data, 'Could not save device');
+```
+
+Handles `{ errors: { field: ['msg'] } }`, `{ detail: '...' }`, `{ title: '...' }`, and plain strings.
 
 ---
 
