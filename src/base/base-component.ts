@@ -176,7 +176,7 @@ export abstract class BaseComponent extends HTMLElement {
    * Use this in onUpdated() instead of raw addEventListener to prevent duplicate
    * listeners when DOM morphing preserves elements across re-renders.
    */
-  protected listen(target: EventTarget, event: string, handler: EventListenerOrEventListenerObject, options?: AddEventListenerOptions): void {
+  protected listen(target: EventTarget, event: string, handler: (e: Event) => void, options?: AddEventListenerOptions): void {
     target.addEventListener(event, handler, { ...options, signal: this._listenerAC?.signal });
   }
 
