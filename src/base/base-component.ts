@@ -71,7 +71,7 @@ export abstract class BaseComponent extends HTMLElement {
       console.error(`${this.constructor.name}: render() threw`, err);
       if (this.shadowRoot) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.shadowRoot.innerHTML = `<div style="padding:.75rem;color:#b91c1c;font:0.75rem/1.4 monospace"><b>${this.constructor.name}</b>: ${msg}</div>`;
+        this.shadowRoot.innerHTML = `<div style="padding:var(--b-space-md, .75rem);color:var(--b-color-danger, #b91c1c);font:var(--b-text-xs, 0.6875rem)/1.4 var(--b-font-mono, monospace)"><b>${this.constructor.name}</b>: ${msg}</div>`;
       }
       BaseComponent._liveInstances.delete(this);
       return;
