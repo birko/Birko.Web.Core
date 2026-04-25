@@ -1,3 +1,5 @@
+import { t, onI18nChange } from '../i18n/global.js';
+
 /**
  * Base class for all Birko web components.
  * Provides: Shadow DOM, adopted stylesheets, reactive observed attributes,
@@ -175,9 +177,17 @@ export abstract class BaseComponent extends HTMLElement {
    * Add an event listener that is automatically removed on the next update() cycle.
    * Use this in onUpdated() instead of raw addEventListener to prevent duplicate
    * listeners when DOM morphing preserves elements across re-renders.
+   *
+   * Generic over the event type so consumers can pass `(e: KeyboardEvent) => void`
+   * without losing strict typing.
    */
-  protected listen(target: EventTarget, event: string, handler: (e: Event) => void, options?: AddEventListenerOptions): void {
-    target.addEventListener(event, handler, { ...options, signal: this._listenerAC?.signal });
+  protected listen<T extends Event = Event>(
+    target: EventTarget,
+    event: string,
+    handler: (e: T) => void,
+    options?: AddEventListenerOptions,
+  ): void {
+    target.addEventListener(event, handler as EventListener, { ...options, signal: this._listenerAC?.signal });
   }
 
   /** Dispatch a typed custom event that bubbles through Shadow DOM. */
@@ -203,6 +213,34 @@ export abstract class BaseComponent extends HTMLElement {
   protected numAttr(name: string, fallback = 0): number {
     const v = this.getAttribute(name);
     return v !== null ? Number(v) : fallback;
+  }
+
+  /**
+   * Resolve a user-facing label with explicit override > global i18n > English fallback.
+   * Priority:
+   *   1. If `attrName` is set on the element, that attribute value wins (back-compat).
+   *   2. Otherwise, look up `key` via the global i18n singleton.
+   *   3. If the key is missing, interpolate params into `fallback`.
+   *
+   * @param attrName Attribute name consumers may set for a per-instance override.
+   * @param key      Canonical translation key (e.g. `bwc.common.close`).
+   * @param fallback English fallback used when no attribute and no translation.
+   * @param params   Optional interpolation parameters (`{name}` → value).
+   */
+  protected label(
+    attrName: string,
+    key: string,
+    fallback: string,
+    params?: Record<string, string | number>,
+  ): string {
+    const raw = this.getAttribute(attrName);
+    if (raw !== null) {
+      if (params) {
+        return raw.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`));
+      }
+      return raw;
+    }
+    return t(key, params, fallback);
   }
 
   private _applyStyles(): void {
@@ -285,3 +323,6 @@ export function define(tag: string, ctor: CustomElementConstructor): void {
     customElements.define(tag, ctor);
   }
 }
+
+// Auto re-render all mounted components when the global i18n locale changes.
+BaseComponent.onGlobalChange((cb) => onI18nChange(() => cb()));

@@ -16,6 +16,10 @@ src/
 ├── http/
 │   ├── api-client.ts        # ApiClient, ApiResponse<T>
 │   └── event-source.ts      # SseClient
+├── i18n/
+│   ├── i18n.ts              # I18n class (locale switching, JSON bundles, plurals)
+│   ├── fmt.ts               # createFormatter — date/time/number/currency
+│   └── global.ts            # Global singleton: i18n, t(), useI18n(), onI18nChange()
 └── router/
     └── router.ts            # Router, Route, link()
 ```
@@ -64,6 +68,13 @@ disconnectedCallback             →          onUnmount
 - `guard?: () => boolean | string` — return `true` to allow, return a path string to redirect
 - `:param` segments extracted to `match.params`
 - `router.onNavigate()` fires on every route change — clean up on `onUnmount()`
+
+### i18n rules
+- A blank `I18n` instance is created at module load — components pick it up via `t(key, params?, fallback?)`
+- Apps that own their own `I18n` instance swap it in with `useI18n(instance)` once at bootstrap
+- `t(key)` returns the key itself when missing (standard i18n convention); pass `fallback` to get an English string back instead
+- `BaseComponent` subscribes to `onI18nChange` at module load → all mounted components re-render on `setLocale()`
+- Components emit user-facing text via `this.label(attrName, i18nKey, fallback, params?)` — explicit attribute wins > global i18n > English fallback
 
 ### SseClient rules
 - Token is appended as a query param (SSE cannot send headers)
