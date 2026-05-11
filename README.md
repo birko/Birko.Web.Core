@@ -1,11 +1,11 @@
 # Birko.Web.Core
 
-Lightweight Web Component framework. No dependencies, no virtual DOM, no build-time magic. Shadow DOM, reactive state, HTTP client, SSE, and hash router — everything needed to build a modern SPA.
+Lightweight Web Component framework. No dependencies, no virtual DOM, no build-time magic. Shadow DOM, reactive state, HTTP client, SSE, hash router, and unified i18n — everything needed to build a modern SPA.
 
 ## Packages
 
 ```
-birko-web-core           # main
+birko-web-core           # main (exports i18n singleton, t, useI18n, onI18nChange, BaseComponent.label)
 birko-web-core/state     # Signal, Store, persistSet/persistGet/persistRemove
 birko-web-core/http      # ApiClient, SseClient, unwrapList, apiErrorMessage, PagedResult
 birko-web-core/router    # Router, link
@@ -124,6 +124,85 @@ static get sharedStyles(): CSSStyleSheet[]    // pre-parsed shared sheets (from 
 function define(tag: string, ctor: CustomElementConstructor): void
 // Registers only if not already defined — safe to call multiple times
 ```
+
+### `label()` — i18n-aware string resolution
+
+`BaseComponent` exposes a single helper for every user-facing string in a component template. Resolution order is **explicit attribute > global i18n key > English fallback**, so per-instance overrides keep working while every component automatically picks up app-wide locale changes.
+
+```typescript
+class BPagination extends BaseComponent {
+  render() {
+    return `
+      <button aria-label="${this.label('label-prev', 'bwc.pagination.prev', 'Previous page')}">‹</button>
+      <button aria-label="${this.label('label-next', 'bwc.pagination.next', 'Next page')}">›</button>
+    `;
+  }
+}
+```
+
+```html
+<!-- App-wide locale: shows whatever 'bwc.pagination.prev' resolves to -->
+<b-pagination></b-pagination>
+
+<!-- Per-instance override (wins over global i18n): -->
+<b-pagination label-prev="Späť" label-next="Ďalej"></b-pagination>
+```
+
+```typescript
+protected label(
+  attrName: string,
+  i18nKey: string,
+  fallback: string,
+  params?: Record<string, string>,
+): string
+```
+
+`BaseComponent` auto-subscribes to `onI18nChange` and re-renders affected instances when the global locale changes — no per-component plumbing.
+
+---
+
+## Internationalization
+
+A single global `I18n` singleton drives every `BaseComponent.label()` call across `birko-web-core`, `birko-web-components`, and `birko-web-shell`. Swap the singleton at app bootstrap, load locale bundles, and every subscribed component re-renders automatically.
+
+```typescript
+import { i18n, t, useI18n, onI18nChange, I18n } from 'birko-web-core';
+
+// 1. Quick: use the default instance and load bundles into it
+await i18n.loadBundle('en', enBundle);
+await i18n.loadBundle('sk', skBundle);
+i18n.setLocale('sk');
+
+// 2. Or replace it with an app-owned instance (subscribers auto re-wire)
+const myI18n = new I18n('sk');
+await myI18n.loadBundle('sk', skBundle);
+useI18n(myI18n);
+
+// Render-side
+const label = t('bwc.common.close');             // 'Zavrieť'
+const greeting = t('bws.hello', { name: 'Alice' }, 'Hello {name}');  // interpolation + fallback
+
+// Subscribe outside a component (rarely needed)
+const unsub = onI18nChange(() => console.log('locale changed'));
+unsub();
+```
+
+**API surface:**
+
+| Export | Purpose |
+|--------|---------|
+| `i18n` | The default `I18n` instance — preloaded with English fallback. |
+| `t(key, params?, fallback?)` | Resolve against the current singleton; interpolates `{param}` placeholders. |
+| `useI18n(instance)` | Replace the active singleton with an app-owned one. All subscribers auto re-wire. |
+| `onI18nChange(fn)` | Subscribe to locale or singleton changes (auto-called from `BaseComponent`). |
+| `I18n` | Class — instantiate to own a separate i18n scope (tests, isolated micro-apps). |
+| `createFormatter(locale)` / `getFormatter(locale)` | Cached `Intl.NumberFormat` / `Intl.DateTimeFormat` factories. |
+
+**Key namespaces in the ecosystem:**
+
+- `bwc.*` — Birko.Web.Components (shipped at `birko-web-components/locales/en.json`)
+- `bws.*` — Birko.Web.Shell (e.g. `bws.common.new`, `bws.pagination.items`); `t()` from the shell auto-interpolates `{entity}` with the page's `entityLabel`
+- `common.*` — `BForm` validation messages (`common.required`, `common.minLength`)
 
 ---
 
