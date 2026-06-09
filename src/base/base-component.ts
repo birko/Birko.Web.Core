@@ -8,6 +8,14 @@ import { t, onI18nChange } from '../i18n/global.js';
 export abstract class BaseComponent extends HTMLElement {
   private _initialized = false;
   private _listenerAC: AbortController | null = null;
+  /**
+   * True between the start of onMount() and the first onUpdated(). Cleared by
+   * update()/softUpdate() so that if a subclass calls this.update() inside
+   * onMount(), connectedCallback skips its own trailing onUpdated() — the first
+   * onUpdated() must run exactly once, otherwise listeners wired in onUpdated()
+   * (e.g. a save button click handler) get duplicated and fire twice.
+   */
+  private _pendingFirstUpdate = false;
 
   // ── Global broadcast — re-render all live components ──
 
@@ -80,13 +88,18 @@ export abstract class BaseComponent extends HTMLElement {
     }
     this._initialized = true;
     this._listenerAC = new AbortController();
+    this._pendingFirstUpdate = true;
     try {
       await this.onMount();
     } catch (err) {
       console.error(`${this.constructor.name}: onMount() threw`, err);
     }
-    // Now that onMount has completed (async data loaded), run the first onUpdated
-    this.onUpdated();
+    // Now that onMount has completed (async data loaded), run the first onUpdated —
+    // unless onMount() already triggered one via this.update() (avoids double-wiring).
+    if (this._pendingFirstUpdate) {
+      this._pendingFirstUpdate = false;
+      this.onUpdated();
+    }
   }
 
   disconnectedCallback(): void {
@@ -132,6 +145,7 @@ export abstract class BaseComponent extends HTMLElement {
     // Abort previous listeners registered via listen(), then create fresh signal
     this._listenerAC?.abort();
     this._listenerAC = new AbortController();
+    this._pendingFirstUpdate = false;
     this.onUpdated();
   }
 
@@ -152,6 +166,7 @@ export abstract class BaseComponent extends HTMLElement {
     }
     this._listenerAC?.abort();
     this._listenerAC = new AbortController();
+    this._pendingFirstUpdate = false;
     this.onUpdated();
   }
 
