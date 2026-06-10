@@ -322,6 +322,12 @@ export abstract class BaseComponent extends HTMLElement {
     for (const a of Array.from(freshEl.attributes)) {
       if (oldEl.getAttribute(a.name) !== a.value) oldEl.setAttribute(a.name, a.value);
     }
+    // Imperatively-managed subtrees: containers whose children are populated outside
+    // render() (e.g. detail panels / drawers filled via `el.innerHTML = ...`) mark
+    // themselves with `data-morph="skip"`. Sync their own attributes, but leave their
+    // children alone so a re-render (incl. softUpdate on locale change) doesn't wipe
+    // the injected content. render() must declare these containers as empty.
+    if (freshEl.getAttribute('data-morph') === 'skip') return;
     // Self-rendering custom elements (shadow DOM, no light DOM children from parent)
     // manage their own rendering — only sync attributes, don't recurse.
     // Container components (b-card, b-modal, etc.) have light DOM children via slots
