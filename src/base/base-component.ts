@@ -8,6 +8,8 @@ import { t, onI18nChange } from '../i18n/global.js';
 export abstract class BaseComponent extends HTMLElement {
   private _initialized = false;
   private _listenerAC: AbortController | null = null;
+  private static _uidCounter = 0;
+  private _uid = '';
   /**
    * True between the start of onMount() and the first onUpdated(). Cleared by
    * update()/softUpdate() so that if a subclass calls this.update() inside
@@ -212,6 +214,16 @@ export abstract class BaseComponent extends HTMLElement {
       bubbles: true,
       composed: true,
     }));
+  }
+
+  /**
+   * Stable, unique-per-instance id prefix, allocated lazily on first access.
+   * Use it to mint deterministic element ids inside the shadow root that survive
+   * re-renders (e.g. `${this.uid}-error` linked from a control's aria-describedby).
+   */
+  protected get uid(): string {
+    if (!this._uid) this._uid = `b${(BaseComponent._uidCounter++).toString(36)}`;
+    return this._uid;
   }
 
   /** Read an attribute as string, with fallback. */
