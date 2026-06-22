@@ -6,10 +6,10 @@ Lightweight Web Component framework. No dependencies, no virtual DOM, no build-t
 
 ```
 birko-web-core           # main (exports i18n singleton, t, useI18n, onI18nChange, BaseComponent.label)
-birko-web-core/state     # Signal, Store, persistSet/persistGet/persistRemove
+birko-web-core/state     # Signal, Store, persistSet/Get/Remove (local), sessionSet/Get/Remove (session)
 birko-web-core/http      # ApiClient, SseClient, unwrapList, apiErrorMessage, PagedResult
 birko-web-core/router    # Router, link
-birko-web-core/storage   # IndexedDbStore + low-level IDB helpers (openDatabase, idbRequest, …)
+birko-web-core/storage   # IndexedDbStore, CacheStore + low-level IDB helpers (openDatabase, idbRequest, …)
 ```
 
 ## Quick start
@@ -246,6 +246,20 @@ persistRemove('app.theme');
 
 Use these instead of `localStorage.getItem/setItem` directly — they handle `JSON.stringify/parse` and swallow parse errors gracefully.
 
+### sessionStorage helpers
+
+Same API, backed by `sessionStorage` (per-tab, cleared when the tab closes) — for transient state that shouldn't outlive the session, like a multi-step wizard's progress:
+
+```typescript
+import { sessionSet, sessionGet, sessionRemove } from 'birko-web-core/state';
+
+sessionSet('wizard.step', 2);
+const step = sessionGet<number>('wizard.step') ?? 0;
+sessionRemove('wizard.step');
+```
+
+Reactive persistence (`Signal({ persist })` / `Store({ persist })`) is localStorage-backed; for reactive session-scoped state, read/write these helpers yourself.
+
 ### Store\<T\>
 
 Key-value store where every key is a Signal.
@@ -269,7 +283,9 @@ const unsub = appStore.onChange('user', user => { /* ... */ });
 
 ---
 
-## Storage (IndexedDB)
+## Storage (IndexedDB + Cache API)
+
+### IndexedDbStore
 
 For keyed collections too large or too structured for `localStorage` — cached
 read data, large app state, anything you'd scan or query — use `IndexedDbStore`.
@@ -323,6 +339,41 @@ not covered above; `close()` releases the connection (reopens lazily);
 Low-level helpers (`openDatabase`, `idbRequest`, `txComplete`, `deleteDatabase`)
 are exported too — the same promisified IDB primitives the offline `ActionQueue`
 is built on, for hand-rolling a custom store.
+
+### CacheStore (Cache API)
+
+For caching HTTP responses and assets — `Request`/`Response` pairs — use
+`CacheStore`, a wrapper over the Cache API. Its headline feature is a cache-first
+`fetch` with a freshness window; it also exposes the raw cache ops and JSON
+convenience methods. Requires a secure context (https / localhost).
+
+```typescript
+import { CacheStore } from 'birko-web-core/storage';
+
+const cache = new CacheStore('api-v1');
+
+// Cache-first fetch — serve from cache if younger than 5 min, else network (and re-cache):
+const res = await cache.fetch('/api/config', { maxAgeMs: 5 * 60_000 });
+const config = await res.json();
+await cache.fetch('/api/config', { forceRefresh: true }); // bypass cache, still re-cache
+
+// Store / read a value as JSON directly:
+await cache.putJson('/api/profile', { name: 'Alice' });
+const profile = await cache.matchJson<{ name: string }>('/api/profile');
+
+// Raw ops + lifecycle:
+await cache.add('/assets/logo.svg');                 // fetch + store
+await cache.addAll(['/a.js', '/b.css']);
+const hit = await cache.has('/api/config');
+await cache.delete('/api/config');
+await cache.clear();                                  // empty the cache
+await cache.destroy();                                // delete the named cache
+if (!CacheStore.isSupported()) { /* fall back to network-only */ }
+```
+
+`Cache.put` only accepts GET requests, so `fetch()` skips caching non-GET
+responses. Use distinct cache names (`api-v1`, `assets`) and bump the suffix to
+invalidate a whole generation at once.
 
 ---
 

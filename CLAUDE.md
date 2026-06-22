@@ -22,7 +22,8 @@ src/
 │   └── global.ts            # Global singleton: i18n, t(), useI18n(), onI18nChange()
 ├── storage/
 │   ├── idb.ts               # Low-level promisified IndexedDB helpers (openDatabase, idbRequest, txComplete, deleteDatabase)
-│   └── idb-store.ts         # IndexedDbStore<T> — generic object store
+│   ├── idb-store.ts         # IndexedDbStore<T> — generic object store
+│   └── cache-store.ts       # CacheStore — Cache API wrapper (cache-first fetch, JSON put/get)
 ├── offline/
 │   ├── action-queue.ts      # ActionQueue — offline mutation queue (built on storage/idb)
 │   └── sync-manager.ts      # SyncManager — drains the queue when back online
@@ -88,11 +89,13 @@ disconnectedCallback             →          onUnmount
 - Call `sse.disconnect()` in `onUnmount()`
 
 ### Storage rules
-- `localStorage` (`persistSet`/`persistGet`, `Signal({ persist })`) is for small UI flags / preferences; `IndexedDbStore` (`src/storage`) is for keyed collections — cached read data, large/structured state
+- Pick the backend by data shape: small flags/preferences → `localStorage` (`persistSet`/`persistGet`, `Signal({ persist })`); transient per-tab state → `sessionStorage` (`sessionSet`/`sessionGet`); keyed structured collections → `IndexedDbStore`; HTTP responses / assets → `CacheStore` (Cache API)
+- `persist.ts` exposes both Web Storage backends through one shared internal (`writeTo`/`readFrom`/`removeFrom` over a `Storage` getter) — add a backend there, don't copy the JSON-safe try/catch a third time. Reactive persistence (`Signal`/`Store` `persist`) is localStorage-only by design
 - One `IndexedDbStore` = one database with one object store; the db name defaults to `birko_${storeName}` so distinct stores never collide on version. Only pass an explicit `dbName` to deliberately co-locate object stores
 - Create object stores / indexes **only** inside the `versionchange` transaction (the `openDatabase` upgrade callback) — never afterwards; bump `version` to add an index
 - All IndexedDB code goes through `storage/idb.ts` (`openDatabase`, `idbRequest`, `txComplete`, `deleteDatabase`) — do not re-promisify the raw API per consumer (`ActionQueue` reuses these)
 - `forEach` cursor callbacks are synchronous — the read transaction auto-commits between microtasks, so collect keys inside and do async work after
+- `CacheStore` needs a secure context — guard optional caching with `CacheStore.isSupported()`; `Cache.put` is GET-only, so `fetch()` skips non-GET responses. Use generation-suffixed cache names (`api-v1`) to invalidate in bulk
 
 ## Adding a new module
 
