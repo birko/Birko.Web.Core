@@ -1,4 +1,5 @@
 import { t, onI18nChange } from '../i18n/global.js';
+import { coerceCssLength } from '../css/length.js';
 
 /**
  * Base class for all Birko web components.
@@ -240,6 +241,16 @@ export abstract class BaseComponent extends HTMLElement {
   protected numAttr(name: string, fallback = 0): number {
     const v = this.getAttribute(name);
     return v !== null ? Number(v) : fallback;
+  }
+
+  /**
+   * Read an attribute as a CSS length, coercing a bare number to `unit` (default `px`).
+   * `lengthAttr('height', '300px')` turns `height="160"` into `"160px"` while passing
+   * explicit units (`"20rem"`, `"50%"`) through unchanged — safe to drop straight into an
+   * inline `style`. See {@link coerceCssLength}.
+   */
+  protected lengthAttr(name: string, fallback = '', unit = 'px'): string {
+    return coerceCssLength(this.getAttribute(name) ?? fallback, unit);
   }
 
   /**
