@@ -20,6 +20,12 @@ src/
 │   ├── i18n.ts              # I18n class (locale switching, JSON bundles, plurals)
 │   ├── fmt.ts               # createFormatter — date/time/number/currency
 │   └── global.ts            # Global singleton: i18n, t(), useI18n(), onI18nChange()
+├── storage/
+│   ├── idb.ts               # Low-level promisified IndexedDB helpers (openDatabase, idbRequest, txComplete, deleteDatabase)
+│   └── idb-store.ts         # IndexedDbStore<T> — generic object store
+├── offline/
+│   ├── action-queue.ts      # ActionQueue — offline mutation queue (built on storage/idb)
+│   └── sync-manager.ts      # SyncManager — drains the queue when back online
 └── router/
     └── router.ts            # Router, Route, link()
 ```
@@ -80,6 +86,13 @@ disconnectedCallback             →          onUnmount
 - Token is appended as a query param (SSE cannot send headers)
 - Subscribe per event type: `const unsub = sse.on('device-update', handler)`
 - Call `sse.disconnect()` in `onUnmount()`
+
+### Storage rules
+- `localStorage` (`persistSet`/`persistGet`, `Signal({ persist })`) is for small UI flags / preferences; `IndexedDbStore` (`src/storage`) is for keyed collections — cached read data, large/structured state
+- One `IndexedDbStore` = one database with one object store; the db name defaults to `birko_${storeName}` so distinct stores never collide on version. Only pass an explicit `dbName` to deliberately co-locate object stores
+- Create object stores / indexes **only** inside the `versionchange` transaction (the `openDatabase` upgrade callback) — never afterwards; bump `version` to add an index
+- All IndexedDB code goes through `storage/idb.ts` (`openDatabase`, `idbRequest`, `txComplete`, `deleteDatabase`) — do not re-promisify the raw API per consumer (`ActionQueue` reuses these)
+- `forEach` cursor callbacks are synchronous — the read transaction auto-commits between microtasks, so collect keys inside and do async work after
 
 ## Adding a new module
 

@@ -1,4 +1,5 @@
 import { signal, type Unsubscribe } from '../state/signal.js';
+import { openDatabase, idbRequest } from '../storage/idb.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -39,30 +40,17 @@ export interface ActionQueueOptions {
 const STORE_NAME = 'actions';
 
 function openDb(dbName: string, dbVersion: number): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(dbName, dbVersion);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        store.createIndex('status', 'status', { unique: false });
-        store.createIndex('timestamp', 'timestamp', { unique: false });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+  return openDatabase(dbName, dbVersion, (db) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      store.createIndex('status', 'status', { unique: false });
+      store.createIndex('timestamp', 'timestamp', { unique: false });
+    }
   });
 }
 
 function tx(db: IDBDatabase, mode: IDBTransactionMode): IDBObjectStore {
   return db.transaction(STORE_NAME, mode).objectStore(STORE_NAME);
-}
-
-function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
 }
 
 // ── ActionQueue ────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ birko-web-core           # main (exports i18n singleton, t, useI18n, onI18nChang
 birko-web-core/state     # Signal, Store, persistSet/persistGet/persistRemove
 birko-web-core/http      # ApiClient, SseClient, unwrapList, apiErrorMessage, PagedResult
 birko-web-core/router    # Router, link
+birko-web-core/storage   # IndexedDbStore + low-level IDB helpers (openDatabase, idbRequest, …)
 ```
 
 ## Quick start
@@ -265,6 +266,63 @@ const theme = appStore.get('theme');
 const unsub = appStore.onChange('user', user => { /* ... */ });
 // Call unsub() in onUnmount()
 ```
+
+---
+
+## Storage (IndexedDB)
+
+For keyed collections too large or too structured for `localStorage` — cached
+read data, large app state, anything you'd scan or query — use `IndexedDbStore`.
+It's a generic, promisified wrapper over a single IndexedDB object store with
+zero dependencies. (For small flags / preferences, stick with
+`Signal({ persist })` or `persistSet`/`persistGet` — IndexedDB is overkill there.)
+
+```typescript
+import { IndexedDbStore } from 'birko-web-core/storage';
+
+interface Product { id: string; name: string; price: number; }
+
+const products = new IndexedDbStore<Product>({
+  storeName: 'products',         // db defaults to `birko_products`
+  keyPath: 'id',                 // in-line key; omit for out-of-line keys passed to set()
+  indexes: [{ name: 'price', keyPath: 'price' }],
+});
+
+await products.set({ id: 'p1', name: 'Widget', price: 9.99 });
+await products.setMany([{ value: a }, { value: b }]);   // one transaction
+
+const p = await products.get('p1');
+const all = await products.getAll();
+const cheap = await products.getAllByIndex('price', IDBKeyRange.upperBound(10));
+const n = await products.count();
+
+await products.update('p1', cur => cur ? { ...cur, price: 8.99 } : undefined); // atomic RMW
+await products.delete('p1');
+
+// Reactive: size signal + change notifications
+console.log(products.size);
+const unsub = products.onChange(({ type, key }) => { /* 'set' | 'delete' | 'clear' */ });
+```
+
+**Model:** one `IndexedDbStore` = one database with one object store. Each
+logical store gets its own database by default (`birko_${storeName}`), which
+sidesteps the multi-store version gotcha. Pass an explicit `dbName` only when
+you deliberately want several object stores sharing one database.
+
+**Out-of-line keys:** omit `keyPath` and pass the key explicitly —
+`store.set(value, key)`. With `autoIncrement: true` the key is generated.
+
+**Scanning large stores:** `forEach((value, key) => …)` walks a cursor without
+loading everything into memory. The callback is synchronous (the read
+transaction auto-commits between microtasks) — collect keys in it, act after.
+
+**Escape hatch / lifecycle:** `transaction(mode, store => …)` for operations
+not covered above; `close()` releases the connection (reopens lazily);
+`destroy()` deletes the whole database.
+
+Low-level helpers (`openDatabase`, `idbRequest`, `txComplete`, `deleteDatabase`)
+are exported too — the same promisified IDB primitives the offline `ActionQueue`
+is built on, for hand-rolling a custom store.
 
 ---
 

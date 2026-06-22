@@ -140,8 +140,8 @@ export class WsClient {
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
-  /** Send a raw string or ArrayBuffer. */
-  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+  /** Send a raw string or ArrayBuffer. Mirrors `WebSocket.send`'s accepted types. */
+  send(data: Parameters<WebSocket['send']>[0]): void {
     if (this._socket?.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket is not open');
     }
