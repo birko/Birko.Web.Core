@@ -70,8 +70,7 @@ export class ApiClient {
   }
 
   async post<T = unknown>(path: string, body?: unknown, meta?: ActionMeta): Promise<ApiResponse<T>> {
-    if (!navigator.onLine && meta) return this._queue<T>('POST', path, body, meta);
-    return this._fetch<T>(path, {
+    return this._sendWrite<T>('POST', path, body, meta, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -79,8 +78,7 @@ export class ApiClient {
   }
 
   async put<T = unknown>(path: string, body?: unknown, meta?: ActionMeta): Promise<ApiResponse<T>> {
-    if (!navigator.onLine && meta) return this._queue<T>('PUT', path, body, meta);
-    return this._fetch<T>(path, {
+    return this._sendWrite<T>('PUT', path, body, meta, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -88,8 +86,27 @@ export class ApiClient {
   }
 
   async delete<T = unknown>(path: string, meta?: ActionMeta): Promise<ApiResponse<T>> {
-    if (!navigator.onLine && meta) return this._queue<T>('DELETE', path, undefined, meta);
-    return this._fetch<T>(path, { method: 'DELETE' });
+    return this._sendWrite<T>('DELETE', path, undefined, meta, { method: 'DELETE' });
+  }
+
+  /**
+   * Issue a queueable write. `navigator.onLine` is only advisory — it reports the network *interface*,
+   * not server reachability, and stays `true` under DevTools-offline on a service-worker-served page or
+   * on a captive/dead network. So we queue in two cases: proactively when we already know we're offline
+   * (skip a doomed fetch), and — the robust fallback — when the fetch actually fails with a network error
+   * (status 0). Either way an offline write lands in the outbox instead of being silently lost.
+   */
+  private async _sendWrite<T>(
+    method: 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    body: unknown,
+    meta: ActionMeta | undefined,
+    init: RequestInit,
+  ): Promise<ApiResponse<T>> {
+    if (!navigator.onLine && meta) return this._queue<T>(method, path, body, meta);
+    const res = await this._fetch<T>(path, init);
+    if (meta && !res.ok && res.status === 0) return this._queue<T>(method, path, body, meta);
+    return res;
   }
 
   private async _queue<T>(
