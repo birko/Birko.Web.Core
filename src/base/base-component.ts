@@ -153,6 +153,30 @@ export abstract class BaseComponent extends HTMLElement {
   }
 
   /**
+   * Force a full re-render via innerHTML, bypassing the DOM morph.
+   *
+   * The morph in update() preserves existing child nodes to keep custom-element state, but it is the
+   * WRONG strategy when the rendered STRUCTURE changes wholesale (e.g. a `<b-form>` swapping schemas
+   * between create and edit): the positional morph can leave stale field nodes behind (a dropped field
+   * lingers, so `[data-field="…"]` for a create-only field still resolves inside the edit form). Use
+   * this when a re-render must start from a clean slate; state preservation is irrelevant because the
+   * caller repopulates values immediately afterwards (setSchema → reset()/setValues()).
+   */
+  protected forceRender(): void {
+    if (!this.shadowRoot) return;
+    try {
+      this.shadowRoot.innerHTML = this.render();
+    } catch (err) {
+      console.error(`${this.constructor.name}: render() threw during forceRender`, err);
+      return;
+    }
+    this._listenerAC?.abort();
+    this._listenerAC = new AbortController();
+    this._pendingFirstUpdate = false;
+    this.onUpdated();
+  }
+
+  /**
    * Soft-update: morph the DOM in place instead of replacing innerHTML.
    * Preserves custom elements and their internal state (table data, form values, event listeners).
    * Used by onGlobalChange (e.g. locale switch) to avoid destroying component trees.
