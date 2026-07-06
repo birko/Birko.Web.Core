@@ -8,6 +8,8 @@
     "./router": "./src/router/index.ts",
     "./state": "./src/state/index.ts",
     "./http": "./src/http/index.ts",
-    "./storage": "./src/storage/index.ts"
+    "./storage": "./src/storage/index.ts",
+    "./pwa": "./src/pwa/index.ts",
+    "./pwa/build-sw.mjs": "./pwa/build-sw.mjs"
   }
 }
