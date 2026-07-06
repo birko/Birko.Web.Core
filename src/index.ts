@@ -6,5 +6,6 @@ export * from './i18n/index.js';
 export * from './storage/index.js';
 export * from './offline/index.js';
 export * from './device/index.js';
+export * from './dom/index.js';
 export * from './pwa/index.js';
 export * from './css/index.js';
