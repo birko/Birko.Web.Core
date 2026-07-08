@@ -45,47 +45,54 @@ export class SyncManager {
     if (this._syncing) return { synced: 0, failed: 0, conflicts: 0 };
     this._syncing = true;
 
-    const pending = await this._queue.getPending();
     let synced = 0;
     let failed = 0;
     let conflicts = 0;
 
-    for (const action of pending) {
-      action.status = 'syncing';
-      await this._queue.update(action);
+    // try/finally so _syncing is always cleared — otherwise an exception from getPending()
+    // (e.g. an IndexedDB open failure) or a queue write would leave _syncing stuck at true and
+    // the guard above would permanently disable every future sync for the session.
+    try {
+      const pending = await this._queue.getPending();
 
-      try {
-        const resp = action.method === 'POST'
-          ? await this._api.post(action.path, action.body)
-          : action.method === 'PUT'
-            ? await this._api.put(action.path, action.body)
-            : await this._api.delete(action.path);
+      for (const action of pending) {
+        action.status = 'syncing';
+        await this._queue.update(action);
 
-        if (resp.ok) {
-          await this._queue.remove(action.id);
-          synced++;
-        } else if (resp.status === this._conflictStatus) {
-          action.status = 'conflict';
-          await this._queue.update(action);
-          conflicts++;
-          this._notifyConflict(action, resp.data);
-        } else {
+        try {
+          const resp = action.method === 'POST'
+            ? await this._api.post(action.path, action.body)
+            : action.method === 'PUT'
+              ? await this._api.put(action.path, action.body)
+              : await this._api.delete(action.path);
+
+          if (resp.ok) {
+            await this._queue.remove(action.id);
+            synced++;
+          } else if (resp.status === this._conflictStatus) {
+            action.status = 'conflict';
+            await this._queue.update(action);
+            conflicts++;
+            this._notifyConflict(action, resp.data);
+          } else {
+            action.status = 'failed';
+            action.retries++;
+            action.lastError = `HTTP ${resp.status}`;
+            await this._queue.update(action);
+            failed++;
+          }
+        } catch (e) {
           action.status = 'failed';
           action.retries++;
-          action.lastError = `HTTP ${resp.status}`;
+          action.lastError = (e as Error).message;
           await this._queue.update(action);
           failed++;
         }
-      } catch (e) {
-        action.status = 'failed';
-        action.retries++;
-        action.lastError = (e as Error).message;
-        await this._queue.update(action);
-        failed++;
       }
+    } finally {
+      this._syncing = false;
     }
 
-    this._syncing = false;
     const result = { synced, failed, conflicts };
     this._notifyComplete(result);
     return result;

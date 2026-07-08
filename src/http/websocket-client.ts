@@ -41,9 +41,16 @@ export class WsClient {
   // ── Connection lifecycle ──────────────────────────────────────────────────
 
   connect(): void {
+    // Public (user-initiated) connect resets the backoff counter; scheduled reconnects call
+    // _doConnect() directly so the attempt count keeps climbing (real exponential backoff +
+    // an enforced maxReconnectAttempts cap). onopen also resets on a genuine success.
+    this._reconnectAttempts = 0;
+    this._doConnect();
+  }
+
+  private _doConnect(): void {
     this.disconnect();
     this._intentionalClose = false;
-    this._reconnectAttempts = 0;
 
     let url = this._options.url;
     const token = this._options.getToken?.();
@@ -206,7 +213,7 @@ export class WsClient {
       this._reconnectTimer = setTimeout(() => {
         this._reconnectTimer = null;
         this._intentionalClose = false;
-        this.connect();
+        this._doConnect();
       }, delay);
     }
   }
