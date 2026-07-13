@@ -31,7 +31,16 @@ export class I18n {
     this._fallbackLocale = fallbackLocale;
     this._storageKey = storageKey;
     this._version = version;
-    this._locale = signal(defaultLocale);
+    // Restore the previously persisted locale so the user's language survives a reload. Guard the
+    // localStorage read for SSR/quota parity with signal.ts's _restore.
+    let initial = defaultLocale;
+    if (storageKey) {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) initial = saved;
+      } catch { /* SSR / storage unavailable — fall back to defaultLocale */ }
+    }
+    this._locale = signal(initial);
   }
 
   // ── Locale management ──

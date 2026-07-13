@@ -20,6 +20,9 @@ export class SyncManager {
   private _api: ApiClient;
   private _conflictStatus: number;
   private _intervalId: ReturnType<typeof setInterval> | null = null;
+  // Retained so dispose() can unregister it — an inline arrow can't be removed and would keep the
+  // disposed SyncManager (and its captured `this`) alive, firing sync() on every reconnect.
+  private _onlineHandler = () => { this.sync(); };
 
   constructor(queue: ActionQueue, api: ApiClient, options: SyncManagerOptions = {}) {
     this._queue = queue;
@@ -27,7 +30,7 @@ export class SyncManager {
     this._conflictStatus = options.conflictStatus ?? 409;
 
     // Auto-sync when coming back online
-    window.addEventListener('online', () => this.sync());
+    window.addEventListener('online', this._onlineHandler);
 
     // Periodic sync attempt (catches edge cases)
     const interval = options.syncInterval ?? 30_000;
@@ -110,12 +113,13 @@ export class SyncManager {
     return () => this._completeListeners.delete(fn);
   }
 
-  /** Stop periodic sync. */
+  /** Stop periodic sync and unregister the online listener. */
   dispose(): void {
     if (this._intervalId) {
       clearInterval(this._intervalId);
       this._intervalId = null;
     }
+    window.removeEventListener('online', this._onlineHandler);
   }
 
   private _notifyConflict(action: QueuedAction, serverResponse: unknown): void {

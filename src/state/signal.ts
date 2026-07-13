@@ -10,7 +10,18 @@ export interface SignalOptions {
   persist?: string;
 }
 
-const PERSIST_PREFIX = 'symbio_';
+// Framework-neutral default. Consumers that need a different namespace (e.g. to preserve
+// pre-existing localStorage keys) call setPersistPrefix() once at startup.
+let PERSIST_PREFIX = 'birko_';
+
+/**
+ * Override the localStorage key prefix used by persisted signals. Call once at app startup,
+ * before any persisted signal is created. Passing '' disables prefixing (callers namespace their
+ * own keys, as persist.ts does).
+ */
+export function setPersistPrefix(prefix: string): void {
+  PERSIST_PREFIX = prefix;
+}
 
 export class Signal<T> {
   private _value: T;
