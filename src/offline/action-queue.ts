@@ -64,6 +64,12 @@ export class ActionQueue {
   constructor(options: ActionQueueOptions = {}) {
     this._dbName = options.dbName ?? 'birko_offline';
     this._dbVersion = options.dbVersion ?? 1;
+    // Hydrate the pending count from IndexedDB on construct, so a COLD reload reflects already-queued writes
+    // without waiting for the next mutation or a reconnect-sync. Previously `_pendingCount` stayed at its
+    // seeded 0 until an enqueue/update/remove or a sync ran, so after an offline reload `<b-sync-status>`
+    // showed a bare "Offline" with no count even with writes outstanding. Fire-and-forget + non-throwing:
+    // if IndexedDB is unavailable the count simply stays 0. Subscribers (the chip) repaint via _notifyChange.
+    void this._refreshCount().catch(() => { /* IDB unavailable — leave count at 0 */ });
   }
 
   /** Reactive pending count. */
