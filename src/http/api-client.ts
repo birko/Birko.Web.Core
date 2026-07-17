@@ -157,10 +157,17 @@ export class ApiClient {
         try {
           response = await fetch(url, { ...init, headers });
         } catch {
+          // Deliberate: a network error on the post-refresh retry is NOT an auth
+          // failure. The refresh itself succeeded (newToken is truthy), so this is
+          // a transient connectivity blip on an otherwise-authenticated session.
+          // Return status 0 (same shape as the first-fetch network path above) and
+          // do NOT call onUnauthorized — logging the user out over a network hiccup
+          // would be wrong. onUnauthorized is reserved for an explicit 401.
           return { ok: false, status: 0, data: null as T, headers: new Headers() };
         }
       }
-      // If still 401 after refresh (or refresh returned null), log out
+      // Log out only on an explicit 401 — still 401 after a successful refresh
+      // (token rejected) or refresh returned null (refresh failed).
       if (response.status === 401) {
         this._options.onUnauthorized?.();
       }
