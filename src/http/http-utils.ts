@@ -51,6 +51,49 @@ export function unwrapList<T>(
 }
 
 /**
+ * Extract the TOTAL row count from an API response — the companion to unwrapList().
+ *
+ * Use this for any derived stat ("N orders", a KPI tile, an option count). Taking
+ * `unwrapList(resp).length` instead silently undercounts the moment the server pages or
+ * clamps `pageSize`, and the UI has no way to tell a full page from a truncated one.
+ * With this helper the cheapest correct count is `?pageSize=1` plus unwrapTotal().
+ *
+ * Resolution order:
+ *  - paged envelope   PagedResult<T>  → `totalCount` (the server's true total)
+ *  - raw array        T[]             → `length` (unpaged endpoint: length IS the total)
+ *  - keyed object     { [dataKey]: T[] } → that array's `length`
+ *  - missing / null                   → 0
+ *
+ * A paged envelope missing `totalCount` falls back to `items.length` rather than 0, so a
+ * partially-shaped response degrades to the old behaviour instead of reading as empty.
+ *
+ * @example
+ * // One row over the wire, exact total on the tile.
+ * const resp = await api.get('api/orders?pageSize=1');
+ * this.stats.totalOrders = unwrapTotal(resp);
+ */
+export function unwrapTotal(
+  response: ApiResponse<unknown>,
+  dataKey?: string,
+): number {
+  const data = response.data;
+  if (!data) return 0;
+  if (Array.isArray(data)) return data.length;
+  if (typeof data !== 'object') return 0;
+
+  if (dataKey) {
+    const keyed = (data as Record<string, unknown>)[dataKey];
+    return Array.isArray(keyed) ? keyed.length : 0;
+  }
+
+  const paged = data as Partial<PagedResult<unknown>>;
+  if (typeof paged.totalCount === 'number') return paged.totalCount;
+  if (Array.isArray(paged.items)) return paged.items.length;
+
+  return 0;
+}
+
+/**
  * Extract a human-readable error message from an API error response body.
  *
  * Handles the following formats (in order):
