@@ -100,8 +100,10 @@ export abstract class BaseComponent extends HTMLElement {
     // Now that onMount has completed (async data loaded), run the first onUpdated —
     // unless onMount() already triggered one via this.update() (avoids double-wiring).
     if (this._pendingFirstUpdate) {
-      this._pendingFirstUpdate = false;
-      this.onUpdated();
+      // Same guarantee as the morph paths, via the one helper that owns it. The initial `innerHTML`
+      // above already upgrades synchronously, so `upgrade()` is a no-op here — but onMount() may have
+      // inserted markup of its own, and the invariant should live in exactly one place.
+      this._afterRender();
     }
   }
 
@@ -146,10 +148,7 @@ export abstract class BaseComponent extends HTMLElement {
       return;
     }
     // Abort previous listeners registered via listen(), then create fresh signal
-    this._listenerAC?.abort();
-    this._listenerAC = new AbortController();
-    this._pendingFirstUpdate = false;
-    this.onUpdated();
+    this._afterRender();
   }
 
   /**
@@ -170,10 +169,7 @@ export abstract class BaseComponent extends HTMLElement {
       console.error(`${this.constructor.name}: render() threw during forceRender`, err);
       return;
     }
-    this._listenerAC?.abort();
-    this._listenerAC = new AbortController();
-    this._pendingFirstUpdate = false;
-    this.onUpdated();
+    this._afterRender();
   }
 
   /**
@@ -191,6 +187,29 @@ export abstract class BaseComponent extends HTMLElement {
       console.error(`${this.constructor.name}: render() threw during softUpdate`, err);
       return;
     }
+    this._afterRender();
+  }
+
+  /**
+   * Hand control back to the subclass after a re-render: reset the `listen()` signal, clear the
+   * first-update latch, then call `onUpdated()`.
+   *
+   * `customElements.upgrade()` runs FIRST and is not optional. `update()`/`softUpdate()` render into a
+   * detached `<template>` and morph CLONES of its nodes in; elements parsed into a template live in an
+   * inert document and are never upgraded there, and inserting them into the connected tree only
+   * ENQUEUES the upgrade reaction rather than running it. Without this call, `onUpdated()` could be
+   * handed a custom element that is still a plain `HTMLElement` — `el.setItems is not a function`,
+   * `el.setConfig is not a function` — intermittently, depending on whether the element was newly
+   * inserted by the morph or preserved from the previous render. `customElements.upgrade(root)`
+   * upgrades the subtree synchronously, so `onUpdated()` always sees a live DOM.
+   *
+   * Found as an intermittent crash on a consumer page whose element is data-gated: when its data was
+   * already loaded the element came from the initial `innerHTML` (parsed into the connected root, so
+   * upgraded synchronously) and worked; when the data arrived after first render the morph inserted it
+   * and the upgrade was still pending. Consumers must not have to guess which case they are in.
+   */
+  private _afterRender(): void {
+    if (this.shadowRoot) customElements.upgrade(this.shadowRoot);
     this._listenerAC?.abort();
     this._listenerAC = new AbortController();
     this._pendingFirstUpdate = false;
