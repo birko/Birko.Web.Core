@@ -1,1 +1,1 @@
-export { escapeHtml } from './html.js';
+export { escapeHtml, safeHref } from './html.js';
