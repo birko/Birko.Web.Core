@@ -9,7 +9,8 @@ Minimal Web Component framework — Shadow DOM base class, reactive state (Signa
 ```
 src/
 ├── base/
-│   └── base-component.ts   # BaseComponent + define()
+│   ├── base-component.ts   # BaseComponent + define()
+│   └── form-control-component.ts  # FormControlComponent — form-associated (ElementInternals) base
 ├── state/
 │   ├── signal.ts            # Signal<T>, computed(), signal()
 │   └── store.ts             # Store<T>
@@ -44,6 +45,35 @@ disconnectedCallback             →          onUnmount
 - `onMount()` — one-time setup (event listeners, async fetch, subscriptions)
 - `onUpdated()` — re-bind after every `update()` call (listeners detach on re-render)
 - `onUnmount()` — teardown subscriptions, observers, global listeners
+
+### FormControlComponent (form-associated controls)
+
+`FormControlComponent extends BaseComponent` is the opt-in base for components that should participate in
+a native `<form>` — value in `FormData`, constraint validation, `reportValidity()`, `form.reset()`,
+`<fieldset disabled>`. It declares `static formAssociated = true`, calls `attachInternals()` in its
+constructor, and forwards the native surface (`form`, `labels`, `validity`, `validationMessage`,
+`willValidate`, `checkValidity()`, `reportValidity()`).
+
+**This must not be folded into `BaseComponent`.** `formAssociated` is read per class at definition time
+and `attachInternals()` is constructor-only/once, so every component would become a submittable listed
+element, `:invalid`-matchable and fieldset-disable-able. Keep it opt-in.
+
+Subclass contract: implement `value` (declared `abstract get/set value(): string`, so the requirement is
+compile-time — the base reads it in `formValue()` and writes it in `restoreInitialState()`); call
+`syncFormState()` whenever the value changes **and** at the end of `onUpdated()`
+before any early return (imperative setters re-render without emitting); override `formValue()` for
+non-string shapes (`multiFormValue()` for lists → N entries under one name, `suffixedFormValue()` for
+two-value controls → `name-from`/`name-to`); override `validationSource()` → `undefined` when the inner
+native control's `validity` is not about the value; override `formAnchor()` so the validation bubble lands
+on the control; override `captureInitialState()`/`restoreInitialState()` when the reset baseline is not the
+`value` attribute (checkedness for toggles, the list for multi-value controls), and call
+`resetFormBaseline()` after populating a control imperatively. Validity precedence: the `error` attribute (→ `customError`) beats mirrored native
+validity. Do **not** write the host's own `disabled` attribute from `formDisabledCallback()` — the base
+holds ancestor-disabled separately and folds it into `boolAttr('disabled')`, because writing the attribute
+makes the element self-disabled and permanently stuck.
+
+Consumers in `Birko.Web.Components`: the 15 value-bearing `b-*` inputs. See that project's CLAUDE.md
+§ "Form-association convention".
 
 ### Rendering rules
 - Never manipulate `shadowRoot.innerHTML` directly — call `this.update()` instead
