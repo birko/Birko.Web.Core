@@ -145,3 +145,114 @@ export async function readAllThrough<T>(params: {
   await mirror.replaceAll(res.data);
   return res.data;
 }
+
+// ── Windowed reads: a dated collection fetched one rolling range at a time ───────────────────────
+//
+// `readThrough` covers one entity and `readAllThrough` a whole collection. Neither fits a **dated
+// collection read a window at a time** — a history behind a 30 / 90 / all range switch — and
+// `readAllThrough` is actively WRONG for it: it refreshes with `replaceAll`, so reading 30 days would
+// replace the mirror with 30 days and destroy the 90-day history the next range tap needs. Offline,
+// the wider range would then hold *less* data than the narrower one.
+//
+// So these refresh with a **window-scoped replace** instead: upsert what came back, evict what
+// vanished from inside the fetched window, leave everything outside it alone. The mirror accumulates
+// into the union of every window ever read.
+//
+// **Dates are `yyyy-MM-dd` strings, compared lexicographically — that is a precondition, not an
+// accident.** Zero-padded ISO days sort chronologically as text, so no `Date` is constructed and no
+// timezone can shift a boundary day. Passing a `Date`, an instant, or any other format breaks the
+// comparison; serialize the day first (a .NET `DateOnly` already arrives in exactly this shape).
+
+/**
+ * Whether a `yyyy-MM-dd` day falls in an inclusive window; an omitted bound is unbounded on that side,
+ * so omitting both means "all".
+ */
+export function inWindow(date: string, from?: string, to?: string): boolean {
+  return (from === undefined || date >= from) && (to === undefined || date <= to);
+}
+
+/**
+ * Refresh a mirror from an authoritative fetch of ONE window: upsert what came back, evict what
+ * disappeared from inside that window, leave everything outside it alone.
+ *
+ * `keyOf` and `dateOf` are separate on purpose. They coincide for a one-row-per-day collection (keyed
+ * by the day itself) and differ for one that permits several rows a day (keyed by id, dated by a
+ * field); collapsing them into one accessor breaks whichever case it wasn't written for.
+ */
+export async function syncWindow<T>(
+  mirror: MirrorStore<T>,
+  fresh: readonly T[],
+  keyOf: (row: T) => string,
+  dateOf: (row: T) => string,
+  from?: string,
+  to?: string,
+): Promise<void> {
+  const freshKeys = new Set(fresh.map(keyOf));
+  // Evictions are rare (a row deleted server-side), so one transaction each is fine; the upserts are
+  // the hot part — every range change refreshes a whole window — so they go in one via `upsertMany`.
+  for (const row of await mirror.readAll()) {
+    if (inWindow(dateOf(row), from, to) && !freshKeys.has(keyOf(row))) await mirror.evict(keyOf(row));
+  }
+  await mirror.upsertMany(fresh);
+}
+
+/**
+ * The outcome of a {@link readWindowThrough} read.
+ *
+ * `source` is reported rather than swallowed (unlike {@link readAllThrough}, which returns a bare
+ * array) because a caller cannot otherwise tell live data from a cache — needed both to show a
+ * "last synced" banner and, more importantly, for `primed`.
+ *
+ * **`primed` is the one that prevents a lie.** An empty `rows` is ambiguous: it can mean "nothing was
+ * recorded in this range", which is true and fine, or "this device has never synced", which is not
+ * the same thing at all. Rendering the second as an empty chart tells the user they never did
+ * anything. `primed: false` means the mirror holds nothing *at all* — show a "connect once" state,
+ * not an empty result. On the server path it is always `true`: the answer is live.
+ */
+export interface WindowRead<T> {
+  rows: T[];
+  source: 'server' | 'mirror';
+  primed: boolean;
+}
+
+/**
+ * Network-first read of one **day window** of a dated collection, falling back to the mirror filtered
+ * to the same window. Refreshes with {@link syncWindow} rather than `replaceAll` — see the block
+ * comment above for why that distinction is load-bearing.
+ *
+ * Rows come back oldest-first. The mirror path sorts explicitly because IndexedDB hands rows back in
+ * key order, which is arbitrary for anything not keyed by its own date.
+ */
+export async function readWindowThrough<T>(params: {
+  fetch: () => Promise<ReadThroughResponse<T[]>>;
+  mirror: MirrorStore<T>;
+  keyOf: (row: T) => string;
+  dateOf: (row: T) => string;
+  from?: string;
+  to?: string;
+}): Promise<WindowRead<T>> {
+  const { fetch, mirror, keyOf, dateOf, from, to } = params;
+
+  const fromMirror = async (): Promise<WindowRead<T>> => {
+    const all = await mirror.readAll();
+    return {
+      rows: all.filter((r) => inWindow(dateOf(r), from, to)).sort((a, b) => dateOf(a).localeCompare(dateOf(b))),
+      source: 'mirror',
+      // Free here: `all` is already in hand, so "has this device ever cached anything" costs no extra
+      // read — which is why the check belongs in this helper rather than in each caller.
+      primed: all.length > 0,
+    };
+  };
+
+  let res: ReadThroughResponse<T[]>;
+  try {
+    res = await fetch();
+  } catch {
+    return fromMirror();
+  }
+  if (res.ok && res.data != null) {
+    await syncWindow(mirror, res.data, keyOf, dateOf, from, to);
+    return { rows: res.data, source: 'server', primed: true };
+  }
+  return fromMirror();
+}

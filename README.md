@@ -340,6 +340,86 @@ Low-level helpers (`openDatabase`, `idbRequest`, `txComplete`, `deleteDatabase`)
 are exported too — the same promisified IDB primitives the offline `ActionQueue`
 is built on, for hand-rolling a custom store.
 
+## Offline reads (MirrorStore)
+
+`ActionQueue` makes *writes* durable offline. `MirrorStore` is the read-side
+counterpart: a local IndexedDB copy of a server-owned collection, plus
+network-first-with-fallback helpers over it. Without one, an offline GET returns
+nothing and any screen that reads before it can write is dead with no signal.
+
+```typescript
+import { MirrorStore, readThrough, readAllThrough } from 'birko-web-core';
+
+const productMirror = new MirrorStore<Product>({
+  dbName: 'shop', storeName: 'products', keyPath: 'id',
+});
+
+// one entity — refreshes the mirror; evicts on a "gone" status (404/410 by default)
+const product = await readThrough({
+  key: id, fetch: () => api.get<Product>(`products/${id}`), mirror: productMirror,
+});
+
+// a whole collection — refreshes with replaceAll, so rows deleted server-side disappear
+const all = await readAllThrough({
+  fetch: () => api.get<Product[]>('products'), mirror: productMirror,
+});
+```
+
+Store methods: `readAll`, `get`, `upsert`, **`upsertMany`** (many rows in *one*
+transaction — the merge counterpart to `replaceAll`, and what makes a windowed
+refresh cost 1 IndexedDB transaction instead of one per row), `replaceAll`
+(clear + bulk put, for a whole-collection refresh), `evict`, `clear`.
+
+### Windowed reads — a dated collection behind a range switch
+
+`readAllThrough` is **wrong** for a history read one rolling range at a time (a
+30 / 90 / all switch). It refreshes with `replaceAll`, so reading 30 days replaces
+the mirror with 30 days and destroys the 90-day history the next range tap needs
+— offline, the wider range would then hold *less* data than the narrower one.
+
+`readWindowThrough` refreshes with a **window-scoped replace** instead: upsert what
+came back, evict what vanished from *inside* the fetched window, leave everything
+outside it alone. The mirror accumulates into the union of every window ever read.
+
+```typescript
+import { readWindowThrough, inWindow, syncWindow } from 'birko-web-core';
+
+const { rows, source, primed } = await readWindowThrough({
+  fetch:  () => api.get<Reading[]>(`readings?from=${from}&to=${to}`),
+  mirror: readingMirror,
+  keyOf:  r => r.guid,   // identity
+  dateOf: r => r.date,   // the day it falls on — separate from identity, see below
+  from, to,              // omit both for "all"
+});
+```
+
+Three things the return value carries, each deliberate:
+
+- **`source`** (`'server' | 'mirror'`) — so the surface can show a "last synced"
+  banner instead of silently presenting a cache as live.
+- **`primed`** — the one that prevents a lie. An empty `rows` is ambiguous: it can
+  mean "nothing recorded in this range" (true, fine) or "this device has never
+  synced" (not the same thing). Rendering the second as an empty chart tells the
+  user they never did anything. `primed: false` means the mirror holds nothing at
+  all → show a "connect once" state, not an empty result.
+- **oldest-first ordering**, sorted explicitly on the mirror path because IndexedDB
+  returns rows in key order, which is arbitrary for anything not keyed by its date.
+
+`keyOf` and `dateOf` are separate because they coincide for a one-row-per-day
+collection (keyed by the day) and differ for one permitting several rows a day
+(keyed by id, dated by a field). Collapsing them breaks whichever case it wasn't
+written for.
+
+> **Dates are `yyyy-MM-dd` strings compared lexicographically — a precondition, not
+> an accident.** Zero-padded ISO days sort chronologically as text, so no `Date` is
+> constructed and no timezone can shift a boundary day. Passing a `Date` or an
+> instant breaks the comparison; serialize the day first (a .NET `DateOnly` already
+> arrives in exactly this shape).
+
+`inWindow(date, from?, to?)` and `syncWindow(mirror, fresh, keyOf, dateOf, from?, to?)`
+are exported too, for a caller that fetches on its own but still wants the
+window-scoped merge (or that filters a cached series to a range).
+
 ### CacheStore (Cache API)
 
 For caching HTTP responses and assets — `Request`/`Response` pairs — use
