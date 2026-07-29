@@ -55,6 +55,21 @@ export class MirrorStore<T> {
     await this.store.set(item);
   }
 
+  /**
+   * Insert or update many mirrored items in **one** transaction, without clearing the rest of the store —
+   * the merge counterpart to {@link MirrorStore.replaceAll}.
+   *
+   * For a mirror refreshed a *window* at a time rather than wholesale (a dated collection read over a rolling
+   * range, where replacing everything would discard the rows outside the window that a wider range still
+   * needs). Looping `upsert` does the same thing at one IndexedDB transaction per row, which is what makes it
+   * worth having: a 90-row window refresh costs 90 transactions instead of 1, on a path that runs every time
+   * the range changes.
+   */
+  async upsertMany(items: readonly T[]): Promise<void> {
+    if (!items.length) return;
+    await this.store.setMany(items.map((value) => ({ value })));
+  }
+
   /** Remove a single mirrored item (e.g. after the server reports it gone). */
   async evict(key: string): Promise<void> {
     await this.store.delete(key);
