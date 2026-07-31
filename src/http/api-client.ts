@@ -64,7 +64,14 @@ export class ApiClient {
     let url = path;
     if (params) {
       const qs = new URLSearchParams(params).toString();
-      if (qs) url += '?' + qs;
+      // Join with '&' when the caller's path ALREADY carries a query string. This used to append '?'
+      // unconditionally, which silently corrupted such calls: a caller passing
+      // `api/warehouse/stock?warehouseConfigId=<id>` plus paging params produced
+      // `...?warehouseConfigId=<id>?page=1&pageSize=20`, so the server parsed the id as
+      // `<id>?page=1` and the list came back EMPTY rather than erroring. Latent for as long as no
+      // caller combined the two; it surfaced the moment b-data-table began sending page/pageSize on
+      // a first load (endpoints with an inline query string are a normal pattern for scoped lists).
+      if (qs) url += (path.includes('?') ? '&' : '?') + qs;
     }
     return this._fetch<T>(url, { method: 'GET' });
   }
