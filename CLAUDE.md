@@ -25,6 +25,11 @@ src/
 │   ├── idb.ts               # Low-level promisified IndexedDB helpers (openDatabase, idbRequest, txComplete, deleteDatabase)
 │   ├── idb-store.ts         # IndexedDbStore<T> — generic object store
 │   └── cache-store.ts       # CacheStore — Cache API wrapper (cache-first fetch, JSON put/get)
+├── dom/
+│   ├── html.ts              # escapeHtml(), safeHref() — interpolation safety
+│   ├── search-text.ts       # foldForSearch(), matchesSearch() — diacritics-insensitive matching
+│   └── scroll.ts            # findScrollParent(), visibleBounds() — FLATTENED-tree walk (assignedSlot),
+│                            #   so slotted page content finds the shell's pane, not documentElement
 ├── offline/
 │   ├── action-queue.ts      # ActionQueue — offline mutation queue (built on storage/idb)
 │   └── sync-manager.ts      # SyncManager — drains the queue when back online
