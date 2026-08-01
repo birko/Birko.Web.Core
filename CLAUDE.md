@@ -73,7 +73,10 @@ native control's `validity` is not about the value; override `formAnchor()` so t
 on the control; override `captureInitialState()`/`restoreInitialState()` when the reset baseline is not the
 `value` attribute (checkedness for toggles, the list for multi-value controls), and call
 `resetFormBaseline()` after populating a control imperatively. Validity precedence: the `error` attribute (→ `customError`) beats mirrored native
-validity. Do **not** write the host's own `disabled` attribute from `formDisabledCallback()` — the base
+validity. `requiredMessage()` — the message for the generic `required` check on controls with no native
+primitive — is **translated**, not just overridable: `label-required` attribute > `common.required` /
+`common.requiredNoLabel` > English fallback. It is user-visible via `b-form.validate()`, and the
+`protected`-override escape hatch is theoretical (no consumer subclasses `b-*`). Do **not** write the host's own `disabled` attribute from `formDisabledCallback()` — the base
 holds ancestor-disabled separately and folds it into `boolAttr('disabled')`, because writing the attribute
 makes the element self-disabled and permanently stuck.
 
@@ -117,6 +120,7 @@ Consumers in `Birko.Web.Components`: the 15 value-bearing `b-*` inputs. See that
 - `t(key)` returns the key itself when missing (standard i18n convention); pass `fallback` to get an English string back instead
 - `BaseComponent` subscribes to `onI18nChange` at module load → all mounted components re-render on `setLocale()`
 - Components emit user-facing text via `this.label(attrName, i18nKey, fallback, params?)` — explicit attribute wins > global i18n > English fallback
+- **Namespace split:** component labels/chrome → `bwc.*`; **validation messages → unprefixed `common.*`**, the same tree `b-form` uses, so one registration translates the app's and the library's verdict on the same field. `FormControlComponent.requiredMessage()` therefore resolves `common.required` (labelled) / `common.requiredNoLabel` (unlabelled), overridable per instance via `label-required`
 
 ### SseClient rules
 - Token is appended as a query param (SSE cannot send headers)

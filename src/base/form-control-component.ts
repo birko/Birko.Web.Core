@@ -154,12 +154,29 @@ export abstract class FormControlComponent extends BaseComponent {
   }
 
   /**
-   * Message for the generic `required` check applied to controls with no native primitive. Override to
-   * localise; the label is included when one is set, matching the browser's own phrasing style.
+   * Message for the generic `required` check applied to controls with no native primitive. The label is
+   * included when one is set, matching the browser's own phrasing style.
+   *
+   * Resolved through the library's standard three-step path — per-instance `label-required` attribute >
+   * global i18n > English fallback — because this message is **user-visible**: `b-form.validate()` now
+   * consults the control's verdict, so an untranslated string here lands in a form whose other errors are
+   * translated. Overriding the method still works and still wins; i18n is an additional layer, not a
+   * replacement (and subclassing is not a real escape hatch — the reference consumers define no `b-*`
+   * subclass at all).
+   *
+   * **Key choice.** The labelled form reuses `common.required` — the *same* key `b-form` uses for its own
+   * `required` rule. One condition, one key: a consumer who has translated the rule message has, by that
+   * act, translated this one too, and the two can no longer disagree. That also settles the cosmetic
+   * divergence between the two layers' fallbacks (`… is required.` here, `… is required` in `b-form`):
+   * once anything is registered under the key both layers say the same thing. The fallbacks themselves are
+   * left alone — they are the observable behaviour for a consumer with no i18n configured, and asserted
+   * downstream as such.
    */
   protected requiredMessage(): string {
     const label = this.getAttribute('label');
-    return label ? `${label} is required.` : 'Please fill out this field.';
+    return label
+      ? this.label('label-required', 'common.required', '{label} is required.', { label })
+      : this.label('label-required', 'common.requiredNoLabel', 'Please fill out this field.');
   }
 
   /**
