@@ -207,6 +207,35 @@ unsub();
 
 ---
 
+## Parsing user-typed numbers
+
+`parseDecimal(raw: string): number | null` — the inverse of the Formatter, and here for the same reason:
+locales disagree about the decimal separator.
+
+```ts
+import { parseDecimal } from 'birko-web-core';
+
+parseDecimal('81,8');   // 81.8  — a comma keypad
+parseDecimal('81.8');   // 81.8
+parseDecimal('12abc');  // null  — parseFloat would return 12
+parseDecimal('1.2.3');  // null
+parseDecimal('  ');     // null  — blank is not 0
+```
+
+**Why this is not `parseFloat`.** A field that accepts decimals must not be `<input type="number">`: the HTML
+"valid floating-point number" grammar accepts only `.`, so on a comma keyboard (Slovak, Czech, German,
+French…) WebKit refuses to insert the separator at all and `81,8` silently becomes `818`. And `parseFloat`
+does not save you — `parseFloat('81,8')` is `81`, a wrong number that looks right. Both failure modes are
+silent, which is why this refuses instead of guessing.
+
+Group separators (`1 234,5`) are deliberately **not** accepted: `1.234` is a thousand in German and
+one-point-two-three-four in English, so there is no locale-free reading. Strip them with knowledge of your
+own locale first.
+
+Most callers should reach for **`b-input type="decimal"`** in `Birko.Web.Components`, which renders the right
+attributes and enforces `min`/`max`/`step` on top of this. Use `parseDecimal` directly for hand-rolled
+controls that cannot use a shadow-DOM component.
+
 ## State
 
 ### Signal\<T\>
